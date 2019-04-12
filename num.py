@@ -42,8 +42,8 @@ print(b['data'][0,128,12])
 ##验证
 eeg['data'].resize(6*23*6,10,128,6,6)
 print(eeg['data'][0,0,0,1,5],eeg['data'].shape)
-eeg['data'] = eeg['data'].transpose(0,1,3,4,2)
-print(eeg['data'][0,0,1,5,0],eeg['data'].shape)
+#eeg['data'] = eeg['data'].transpose(0,1,3,4,2)
+#print(eeg['data'][0,0,1,5,0],eeg['data'].shape)
 
 
 
@@ -56,7 +56,7 @@ for i in range(eeg['label'].size):
 
 eeg_label.resize(6*23*6,1)
 print(eeg_label.shape)
-print(eeg_label)
+#print(eeg_label)
 eeg['label'] = eeg_label
 #       labelge格式为 clips*persons*subsamples*1=-》828*1
 np.array(eeg)
