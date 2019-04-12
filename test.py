@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 
 path = 'eeg_data.npy'
+BATCH_SIZE = 16
 
 class DataSet(torch.utils.data.Dataset):
     aa =None
@@ -19,7 +20,7 @@ class DataSet(torch.utils.data.Dataset):
 
 traindata = DataSet()
 test_x,test_y = traindata.aa['data'][5*23*6:],traindata.aa['label'][5*6*23:]
-trainloader = torch.utils.data.DataLoader(dataset=traindata,batch_size=16,shuffle=True)
+trainloader = torch.utils.data.DataLoader(dataset=traindata,batch_size=BATCH_SIZE,shuffle=True)
 
 class CNN(nn.Module):
     def __init__(self):
@@ -28,22 +29,23 @@ class CNN(nn.Module):
             nn.Conv2d(in_channels=128,out_channels=64,kernel_size=3), 
             nn.ReLU(),
             nn.BatchNorm2d(64),
-            nn.Dropout2d(0.5)
+           # nn.Dropout2d(0.5)
             #nn.MaxPool2d(2)
         )
         self.l2 = nn.Sequential(
             nn.Conv2d(in_channels=64,out_channels=32,kernel_size=3),
             nn.ReLU(),
             nn.BatchNorm2d(32),
-            nn.Dropout2d(0.5)
+            #nn.Dropout2d(0.5)
             #nn.MaxPool2d(2)
         )
-        self.out = nn.Linear(128,32)
+        self.linear = nn.Linear(128,32)
     def forward(self,x):
         x = self.l1(x)
         x = self.l2(x)
-        output = self.out(x)
-
+      #  print(x.shape)
+        output = self.linear(x.view(x.size(0),-1))
+        return output
 
 class Combine(nn.Module):
     def __init__(self):
@@ -54,19 +56,22 @@ class Combine(nn.Module):
         self.linear = nn.Linear(160,23)
 
     def forward(self,input):
+       # print(type(input))
         batch_size,seqlen,features,cow,col = input.size()
-        print(batch_size,seqlen,cow,col,features)
-        input = input.view(batch_size*seqlen,cow,col,features)
-        input = self.cnn(input)
-        r_input = input.view(batch_size,seqlen,-1)
+        input = input.view(batch_size*seqlen,features,cow,col)
+        coutput = self.cnn(input)
+        r_input = coutput.view(batch_size,seqlen,-1)
         rout1,h1 = self.rnn1(r_input)
+       # print(rout1.shape)
        # out = self.rnn2(rout1,h1)
-        out = self.linear(rout1.view(batch_size,-1))
-        out = nn.Softmax(out,dim=1)
+        
+        out = self.linear(rout1.reshape(rout1.size(0),-1))  # contigious
+        out = nn.functional.log_softmax(out,dim=1)
         return out
 
 
 model = Combine()
+model.double()
 optimizer =torch.optim.Adam(model.parameters())
 loss_fun = nn.CrossEntropyLoss()
 
@@ -74,15 +79,25 @@ loss_fun = nn.CrossEntropyLoss()
 for epoch in range(5):
     for step,(x,y) in enumerate(trainloader):
         optimizer.zero_grad()
+        y =y.long()
         out = model(x)
-        loss = loss_fun(out,y)    
+        #print(out.shape,y.shape)
+        loss = loss_fun(out,y.squeeze())    
         loss.backward()
         optimizer.step()
 
         if step%5 ==0:
+            #print(test_x.shape)
+            test_x = torch.DoubleTensor(test_x)
+            test_y = torch.LongTensor(test_y).squeeze()
             testout = model(test_x)
-            pred_y = testout.data.max(1,keep_dim=True)[1]
-            accuracy = (pred_y == test_y).sum().item() / float(test_y.size(0))
-            print('Epoch: ', epoch, '| train loss: %.4f' % loss.data[0], '| test accuracy: %.2f' % accuracy)
+            pred_y = testout.data.max(1)[1]
+            #print(test_y.size(0))
+            #print(testout.data.max(1)[1])
+            print(pred_y.shape)
+            print(test_y.shape)
+            print((pred_y == test_y).sum())
+            accuracy = (pred_y == test_y).sum().item()/test_y.size(0)
+            print('Epoch: ', epoch, '| train loss: %.4f' % loss.data.item(), '| test accuracy: %.2f' % accuracy)
 
 
