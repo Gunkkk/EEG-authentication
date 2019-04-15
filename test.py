@@ -59,7 +59,8 @@ import time
     =>批标准化后归一化可以收敛
 !bs=128 lr=0.005 trainloss <>1.5 test loss <>4 acc<>0.12
 
-!bs=16 lr=0.001 t
+!bs=16 lr=0.001 epoch 30 train loss<>2.8 震荡 test acc 0.13
+
     =>rnn 32 16 
 
 '''
