@@ -5,6 +5,24 @@ import numpy as np
 
 
 
+def mesh_normalize(data):
+    mean = data[data.nonzero()].mean()
+    std = data[data.nonzero()].std()
+    data[data.nonzero()] = (data[data.nonzero()]-mean)/std
+    #print(data[data.nonzero()].mean(),data[data.nonzero()].std())
+    return data
+
+def allStandardScaler(data):
+    '''
+    @input all input (clip*person*6)*10*128*6*6
+    @output mesh normalization respectively
+    '''
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            for k in range(data.shape[2]):
+                data[i,j,k] = mesh_normalize(data[i,j,k])
+    #data[:,:,:] = mesh_normalize(data[:,:,:])
+    return data
     
 def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
     
@@ -87,6 +105,11 @@ def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
     # test_label = eeg['label'][15*23*6:]
     print(train_data.shape,train_label.shape,test_data.shape,test_label.shape)
     
+    allStandardScaler(train_data)
+    print('train_norm')
+    allStandardScaler(test_data)
+    print('test_norm')
+
     train = dict()
     test = dict()
     train['data'] = train_data
@@ -108,8 +131,10 @@ def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
 # b[1,2] = 2
 # print(b)
 if __name__ == "__main__":
-    a = np.load('eeg_all.npy')
+    a = np.load('eeg_baseline.npy')
     #eegtodata(a,18,'eeg_baseline_train.npy','eeg_baseline_test.npy')
-    eegtodata(a,18,'eeg_baseline_train_shuffle.npy','eeg_baseline_test_shuffle.npy',shuffle=True)
+    eegtodata(a,18,'eeg_baseline_train_shuffle_norm.npy','eeg_baseline_test_shuffle_norm.npy',shuffle=True)
+
+
     #train (2070,10,128,6,6) (2070,1)
     #test  (414,10,128,6,6)  (414,1)

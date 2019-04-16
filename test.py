@@ -5,6 +5,7 @@ import torchvision as tv
 import numpy as np
 from visualize import make_dot
 import time 
+import matplotlib.pyplot as plt
 '''
 
 !取消归一化   0.003 不收敛
@@ -61,19 +62,29 @@ import time
 
 !bs=16 lr=0.001 epoch 30 train loss<>2.8 震荡 test acc 0.13
 
-    =>rnn 32 16 
-
+    =>rnn 16 8
+!bs=16 lr=0.001  震荡 
+    =>rnn 32 16
+    =>取消归一化 mesh各自标准化 nonzero
+!bs=16 lr=0.001 train loss<>0.1 test loss 2 test acc<>55
+!bs=128 lr=0.001 train loss<>0.8 test loss 1.7 test acc<>50
+!bs=256 lr=0.001 train loss<>1.2 test loss<>1.9 test acc<>40
+!bs=64 lr=0.001 train loss<>0.3 test loss <>1.6 acc<>58
+!bs=64 lr=0.01 train loss <>0.1 震荡 test loss <>4.8 acc<>40
+!bs=64 lr=0.005 过拟合 test loss <>3.5 test acc<> 45
+    =>optim RMSprop
+!bs=64 lr=0.003 
 '''
 
-train_path = 'eeg_baseline_train_shuffle.npy'
-test_path = 'eeg_baseline_test_shuffle.npy'
-BATCH_SIZE = 16
-LR=0.001
+train_path = 'eeg_baseline_train_shuffle_norm.npy'
+test_path = 'eeg_baseline_test_shuffle_norm.npy'
+BATCH_SIZE = 64
+LR=0.003
 EPOCH = 100
-CUDA = False
+CUDA = False #TODO
 def meanandvar(data):
-    m = np.mean(data,axis=(0,1,3,4))
-    n = np.std(data,axis=(0,1,3,4))
+    m = np.mean(data,axis=(0,1,2))
+    n = np.std(data,axis=(0,1,2))
     #print(m,n)
     return m,n
 
@@ -94,14 +105,30 @@ def tstandardScaler(data,m,n):
     return data
     #print(m,n)
     
-
+def mesh_normalize(data):
+    mean = data[data.nonzero()].mean()
+    std = data[data.nonzero()].std()
+    data[data.nonzero()] = (data[data.nonzero()]-mean)/std
+    print(data[data.nonzero()].mean(),data[data.nonzero()].std())
+    return data
+def allStandardScaler(data):
+    '''
+    @input all input (clip*person*6)*10*128*6*6
+    @output mesh normalization respectively
+    '''
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            for k in range(data.shape[2]):
+                data[i,j,k] = mesh_normalize(data[i,j,k])
+    #data[:,:,:] = mesh_normalize(data[:,:,:])
+    return data
 
 class DataSet(torch.utils.data.Dataset):
     aa =None
     def __init__(self,path,transform=None,shuffle=False):
         super(DataSet,self).__init__()
         self.aa = np.load(path).item()
-        
+       # print(self.aa['data'])
         # data = self.aa['data'][:5*23*6]
         # label = self.aa['label'][:5*23*6]
         # self.bb['data'] = data
@@ -113,11 +140,12 @@ class DataSet(torch.utils.data.Dataset):
             self.aa['data'] = shufflez_data
             self.aa['label'] = shufflez_label
 
-        self.normaa = normalization(self.aa['data'][:])
-        self.m,self.s = meanandvar(self.normaa)
+        #self.meshnor = allStandardScaler(self.aa['data'])
+        #self.normaa = normalization(self.aa['data'][:])
+        #self.m,self.s = meanandvar(self.normaa)
       #  self.transform = tv.transforms.Compose([tv.transforms.Resize((9,9))])
     def __getitem__(self,index):
-        data,label = self.normaa[index],self.aa['label'][index]
+        data,label = self.aa['data'][index],self.aa['label'][index]
         #print(data.shape)
        # seqlen,features,cow,col = data.shape
         #print(batch_size,seqlen,features,cow,col)
@@ -127,8 +155,8 @@ class DataSet(torch.utils.data.Dataset):
        # dd = np.zeros(data.shape)
         
       # data => 10*128*6*6 （6*23）
-        data = standardScaler(data,self.m,self.s)
-        data = normalization(data)
+       # data = standardScaler(data,self.m,self.s)
+       # data = normalization(data)
         #print(data)
         #print(np.std(data,axis=(0,2,3)))
         #data = self.transform(data[:])
@@ -146,7 +174,7 @@ class DataSet(torch.utils.data.Dataset):
     
 traindata = DataSet(train_path)
 testdata = DataSet(test_path)
-#test_x,test_y = traindata.aa['data'][5*23*6:],traindata.aa['label'][5*6*23:]
+
 #todo test_x 归一化标准化
 #test_x = normalization(test_x[:])
 #test_x = tstandardScaler(test_x[:],traindata.m,traindata.s)
@@ -177,7 +205,7 @@ class CNN(nn.Module):
            # nn.Dropout2d(0.3)
             #nn.MaxPool2d(2)
         )
-        self.linear = nn.Linear(64,16)
+        self.linear = nn.Linear(64,32)
     def forward(self,x):
         x = self.l0(x)
         x = self.l1(x)
@@ -190,9 +218,9 @@ class Combine(nn.Module):
     def __init__(self):
         super(Combine,self).__init__()
         self.cnn = CNN()
-        self.rnn1 = nn.GRU(16,8,2,batch_first=True)
+        self.rnn1 = nn.GRU(32,16,2,batch_first=True)
         #self.rnn2 = nn.GRU(16,8,1)
-        self.linear = nn.Linear(80,23)
+        self.linear = nn.Linear(160,23)
 
     def forward(self,input):
         #print(input.shape)
@@ -211,7 +239,7 @@ class Combine(nn.Module):
 
 model = Combine()
 model.double()
-optimizer =torch.optim.Adam(model.parameters(),LR)
+optimizer =torch.optim.RMSprop(model.parameters(),LR)
 loss_fun = nn.NLLLoss()#CrossEntropyLoss()
 
 '''
@@ -230,10 +258,12 @@ model visualization using visualize.py
 #def test():
 
 
-
+test_x,test_y = traindata.aa['data'][14*23*6:],traindata.aa['label'][14*6*23:]
 
 def train(epoch):
     model.train()
+    loss = 0.0
+    accuracy= 0.0
     for step,(x,y) in enumerate(trainloader):
         optimizer.zero_grad()
         y =y.long()
@@ -244,20 +274,20 @@ def train(epoch):
         loss.backward()
         optimizer.step()
         if step%5 ==0:
-            print('Epoch: ', epoch, '| train loss: %.4f' % loss.data.item())
-        
             #print(test_x.shape)
-            # test_x = torch.DoubleTensor(test_x)
-            # test_y = torch.LongTensor(test_y).squeeze()
-            # testout = model(test_x)
-            # pred_y = testout.data.max(1)[1]
-            # #print(test_y.size(0))
-            # #print(testout.data.max(1)[1])
-            # #print(pred_y.shape)
-            # #print(test_y.shape)
-            # #print((pred_y == test_y).sum())
-            # accuracy = (pred_y == test_y).sum().item()/test_y.size(0)
+            tx = torch.DoubleTensor(test_x)
+            ty = torch.LongTensor(test_y).squeeze()
+            testout = model(tx)
+            pred_y = testout.data.max(1)[1]
+            #print(test_y.size(0))
+            #print(testout.data.max(1)[1])
+            #print(pred_y.shape)
+            #print(test_y.shape)
+            #print((pred_y == test_y).sum())
+            accuracy = (pred_y == ty).sum().item()/ty.size(0)
+            print('Epoch: ', epoch, '| train loss: %.4f' % loss.data.item(),'train acc:%.4f'%accuracy)
         
+    return loss,accuracy
 
 def test():
     model.eval()
@@ -278,12 +308,30 @@ def test():
     test_loss /= step+1 #len(testloader.dataset)
     acc /= step+1
     print('Test set average loss %.4f:'%test_loss,'accuracy %.4f'%acc)
+    return test_loss,acc
 
 if __name__ == "__main__":
     
+    train_loss = np.zeros(shape=(EPOCH,2))
+    test_loss = np.zeros(shape=(EPOCH,2))
     start = time.time()
     for epoch in range(EPOCH):
-        train(epoch)
-        test()
+        train_loss[epoch,0],train_loss[epoch,1] = train(epoch)
+        test_loss[epoch,0],test_loss[epoch,1]= test()
     end = time.time()
     print('time:',end-start)
+
+    plt.subplot(2,1,1)
+    plt.plot(np.arange(EPOCH),train_loss[:,0],'b-',label='train_loss')
+    plt.plot(np.arange(EPOCH),test_loss[:,0],'r-',label='test_loss')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.legend()
+    plt.subplot(2,1,2)
+    plt.plot(np.arange(EPOCH),test_loss[:,1],'b-',label='test_acc')
+    plt.plot(np.arange(EPOCH),train_loss[:,1],'r-',label='train_acc')
+    plt.xlabel('epoch')
+    plt.ylabel('acc')
+    plt.legend()
+    plt.savefig('bs'+str(BATCH_SIZE)+'lr'+str(LR)+'time'+str(end-start)+'.png',format='png')
+    plt.show()
