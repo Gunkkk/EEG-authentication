@@ -27,10 +27,10 @@ def allStandardScaler(data):
 def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
     
     b = dict()
-    data = a[0]['data']
+    data = a[0]['data'][:,:7808,:]
     label = a[0]['label']
     for i in range(1,CLIP_NUM): #12345
-        data = np.append(data,a[i]['data'],axis=0)
+        data = np.append(data,a[i]['data'][:,:7808,:],axis=0)
         label = np.append(label,a[i]['label'],axis=0)
     b['data'] = data
     b['label'] = label
@@ -40,20 +40,20 @@ def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
     eeg=dict()
     eeg['label'] = b['label']
     eeg['data'] = np.zeros(shape=(23*CLIP_NUM,7680,6,6))
-    eeg['data'][:,:,0,1] = b['data'][:,128:,0]
-    eeg['data'][:,:,1,0] = b['data'][:,128:,1]
-    eeg['data'][:,:,1,2] = b['data'][:,128:,2]
-    eeg['data'][:,:,2,1] = b['data'][:,128:,3]
-    eeg['data'][:,:,3,0] = b['data'][:,128:,4]
-    eeg['data'][:,:,4,1] = b['data'][:,128:,5]
-    eeg['data'][:,:,5,2] = b['data'][:,128:,6]
-    eeg['data'][:,:,5,3] = b['data'][:,128:,7]
-    eeg['data'][:,:,4,4] = b['data'][:,128:,8]
-    eeg['data'][:,:,3,5] = b['data'][:,128:,9]
-    eeg['data'][:,:,2,4] = b['data'][:,128:,10]
-    eeg['data'][:,:,1,3] = b['data'][:,128:,11]
-    eeg['data'][:,:,1,5] = b['data'][:,128:,12]
-    eeg['data'][:,:,1,4] = b['data'][:,128:,13]
+    eeg['data'][:,:,0,1] = b['data'][:,128:7808,0]
+    eeg['data'][:,:,1,0] = b['data'][:,128:7808,1]
+    eeg['data'][:,:,1,2] = b['data'][:,128:7808,2]
+    eeg['data'][:,:,2,1] = b['data'][:,128:7808,3]
+    eeg['data'][:,:,3,0] = b['data'][:,128:7808,4]
+    eeg['data'][:,:,4,1] = b['data'][:,128:7808,5]
+    eeg['data'][:,:,5,2] = b['data'][:,128:7808,6]
+    eeg['data'][:,:,5,3] = b['data'][:,128:7808,7]
+    eeg['data'][:,:,4,4] = b['data'][:,128:7808,8]
+    eeg['data'][:,:,3,5] = b['data'][:,128:7808,9]
+    eeg['data'][:,:,2,4] = b['data'][:,128:7808,10]
+    eeg['data'][:,:,1,3] = b['data'][:,128:7808,11]
+    eeg['data'][:,:,1,5] = b['data'][:,128:7808,12]
+    eeg['data'][:,:,1,4] = b['data'][:,128:7808,13]
 
     print(eeg['data'][0,0,1,5])
     print('=====')
@@ -84,7 +84,7 @@ def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
         permutation = np.random.permutation(eeg['label'].size)
         shufflez_data = eeg['data'][permutation,:,:,:,:]
         shufflez_label = eeg['label'][permutation,:]
-
+    
     eeg['data'].resize(CLIP_NUM*23,6,10,128,6,6)
     eeg['label'].resize(CLIP_NUM*23,6,1)
     train_data = eeg['data'][:,:5,:,:,:,:].copy()
@@ -131,10 +131,11 @@ def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
 # b[1,2] = 2
 # print(b)
 if __name__ == "__main__":
-    a = np.load('eeg_baseline.npy')
+    #a = np.load('eeg_baseline.npy')
     #eegtodata(a,18,'eeg_baseline_train.npy','eeg_baseline_test.npy')
-    eegtodata(a,18,'eeg_baseline_train_shuffle_norm.npy','eeg_baseline_test_shuffle_norm.npy',shuffle=True)
-
+    #eegtodata(a,18,'eeg_baseline_train_shuffle_norm.npy','eeg_baseline_test_shuffle_norm.npy',shuffle=True)
+    a = np.load('eeg_stimuli.npy')
+    eegtodata(a,18,'eeg_stimuli_train_shuffle_norm.npy','eeg_stimuli_test_shuffle_norm.npy',shuffle=True)
 
     #train (2070,10,128,6,6) (2070,1)
     #test  (414,10,128,6,6)  (414,1)

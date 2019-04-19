@@ -128,18 +128,24 @@ import matplotlib.pyplot as plt
     =>交叉验证 cnn 64 32 16 weight decay=0.001 rnn32 16 dp0.3 
 !bs=64 lr=0.005 
 Final test loss:2.7004 acc0.3645
+    => weight = 0.001 rnn 32 16 
+    换dataest 和之前一一样 
+    缩小dataset 效果差
+    更换一段视频同一部分的数据
+
 '''
-EXTRA_NAME='EPOCH=100 dsc去掉l2 weight decay=0.001 rnn16 8 dp0.3  '
+EXTRA_NAME=''
 train_path = 'eeg_baseline_train_shuffle_norm.npy'
 test_path = 'eeg_baseline_test_shuffle_norm.npy'
 BATCH_SIZE = 64
 LR=0.005
 EPOCH = 100
-CUDA = False 
-RNN_DROP = 0.3
+CUDA = False
+RNN_DROP = 0
 CNN_DROP = 0
 CNN_FILTERS=[64,32,16]
 RNN_FEA = [32,16]
+WD=0.001
 
 def meanandvar(data):
     m = np.mean(data,axis=(0,1,2))
@@ -185,8 +191,8 @@ def allStandardScaler(data):
 class CrossDataSet(torch.utils.data.Dataset):
     def __init__(self,path1,path2,k,index,cross=True):
         super(CrossDataSet,self).__init__()
-        self.alltrain = np.load(path1).item()
-        self.alltest = np.load(path2).item()
+        self.alltrain = np.load(path1,encoding='latin1').item()
+        self.alltest = np.load(path2,encoding='latin1').item()
         self.alldata = np.concatenate((self.alltrain['data'],self.alltest['data']),axis=0)
         self.alllabel = np.concatenate((self.alltrain['label'],self.alltest['label']),axis=0)
         self.k = k
@@ -223,7 +229,7 @@ class CrossTest(torch.utils.data.Dataset):
 class DataSet(torch.utils.data.Dataset):
     def __init__(self,path,transform=None,shuffle=False):
         super(DataSet,self).__init__()
-        self.aa = np.load(path).item()
+        self.aa = np.load(path,encoding='latin1').item()
        # print(self.aa['data'])
         # data = self.aa['data'][:5*23*6]
         # label = self.aa['label'][:5*23*6]
@@ -266,7 +272,7 @@ class DataSet(torch.utils.data.Dataset):
 
     def __len__(self):
         #print(self.aa['label'].size)
-        return self.aa['label'].size
+        return int(self.aa['label'].size*2/3)
     
 #traindata = DataSet(train_path)
 #testdata = DataSet(test_path)
@@ -373,7 +379,7 @@ def init_model():
     global model,optimizer,loss_fun
     model = Combine()
     model.double()
-    optimizer =torch.optim.Adam(model.parameters(),LR,weight_decay=0.001)
+    optimizer =torch.optim.Adam(model.parameters(),LR,weight_decay=WD)
     loss_fun = nn.NLLLoss()#CrossEntropyLoss()
     if CUDA is True:
         model.cuda()
@@ -394,7 +400,7 @@ model visualization using visualize.py
 
 
 
-#test_x,test_y = traindata.aa['data'][14*23*6:],traindata.aa['label'][14*6*23:]
+
 
 def train(epoch,trainloader,test_x,test_y):
     model.train()
@@ -457,7 +463,7 @@ def test(testloader):
     return test_loss,acc
 
 def cross():
-    start = time.time()
+    #start = time.time()
     epoch = 0
     k=5
     for index in range(k):
@@ -516,14 +522,18 @@ def final():
     init_model()
     train_loss = np.zeros(shape=(EPOCH,2))
     test_loss = np.zeros(shape=(EPOCH,2))
-    #trainloader = torch.utils.data.DataLoader(dataset=traindata,batch_size=BATCH_SIZE,shuffle=True)
-    #testloader = torch.utils.data.DataLoader(dataset=testdata,batch_size=BATCH_SIZE,shuffle=True)
+    # traindata = DataSet(train_path)
+    # testdata = DataSet(test_path)
+    # trainloader = torch.utils.data.DataLoader(dataset=traindata,batch_size=BATCH_SIZE,shuffle=True)
+    # testloader = torch.utils.data.DataLoader(dataset=testdata,batch_size=BATCH_SIZE,shuffle=True)
+    # test_x,test_y = traindata.aa['data'][8*23*6:9*23*6],traindata.aa['label'][8*6*23:9*23*6]
+
+    crossdata = CrossDataSet(train_path,test_path,10,1,cross=True)
+    crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
+    trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
+    testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
+    test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
     for epoch in range(EPOCH):#TODO
-            crossdata = CrossDataSet(train_path,test_path,5,0,cross=False)
-            crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
-            trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
-            testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
-            test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
             train_loss[epoch,0],train_loss[epoch,1] = train(epoch,trainloader,test_x,test_y)
             test_loss[epoch,0],test_loss[epoch,1]= test(testloader)
     
