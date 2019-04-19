@@ -132,20 +132,24 @@ Final test loss:2.7004 acc0.3645
     换dataest 和之前一一样 
     缩小dataset 效果差
     更换一段视频同一部分的数据
-
+    1/10 test 过拟合依旧严重  
+    =>更换stimuli
+    =>0.3 0.3 0.001 收敛慢 
+    =>0 0.3 0.001 cha
+    =>dsc 0.2 0.2 0.0005
 '''
 EXTRA_NAME=''
-train_path = 'eeg_baseline_train_shuffle_norm.npy'
-test_path = 'eeg_baseline_test_shuffle_norm.npy'
+train_path = 'eeg_stimuli_train_shuffle_norm.npy'
+test_path = 'eeg_stimuli_test_shuffle_norm.npy'
 BATCH_SIZE = 64
 LR=0.005
 EPOCH = 100
 CUDA = False
-RNN_DROP = 0
-CNN_DROP = 0
+RNN_DROP = 0.2
+CNN_DROP = 0.2
 CNN_FILTERS=[64,32,16]
 RNN_FEA = [32,16]
-WD=0.001
+WD=0.0005
 
 def meanandvar(data):
     m = np.mean(data,axis=(0,1,2))
@@ -296,18 +300,18 @@ class DSC(nn.Module):
             nn.ReLU()
         )
         self.point_wise = nn.Sequential(
-            nn.Conv2d(in_channels=128,out_channels=64,kernel_size=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(in_channels=128,out_channels=64,kernel_size=1),     
             nn.ReLU(),
-            nn.MaxPool2d(2)
+            nn.BatchNorm2d(64),
+          #  nn.MaxPool2d(2)
         ) # =>64*4*4
         self.l2 = nn.Sequential(
             nn.Conv2d(64,32,3),
-            nn.BatchNorm2d(32),
             nn.ReLU(),
+            nn.BatchNorm2d(32),
             nn.Dropout2d(CNN_DROP)
         )
-        self.fc = nn.Linear(64*2*2,32)
+        self.fc = nn.Linear(64*4*4,32)
     def forward(self,input):
         x = self.depth_wise(input)
         x = self.point_wise(x)
@@ -320,22 +324,25 @@ class CNN(nn.Module):
         super(CNN,self).__init__()
         self.l0 = nn.Sequential(
             nn.Conv2d(in_channels=128,out_channels=CNN_FILTERS[0],kernel_size=3,padding=1),
-            nn.BatchNorm2d(CNN_FILTERS[0]),
+            
             nn.ReLU(),
+            nn.BatchNorm2d(CNN_FILTERS[0]),
             nn.Dropout2d(CNN_DROP),
            # nn.MaxPool2d(2)   
         )
         self.l1 = nn.Sequential(
             nn.Conv2d(in_channels=CNN_FILTERS[0],out_channels=CNN_FILTERS[1],kernel_size=3), 
-            nn.BatchNorm2d(CNN_FILTERS[1]),
+            
             nn.ReLU(),
+            nn.BatchNorm2d(CNN_FILTERS[1]),
             nn.Dropout2d(CNN_DROP),
            # nn.MaxPool2d(2)
         )
         self.l2 = nn.Sequential(
             nn.Conv2d(in_channels=CNN_FILTERS[1],out_channels=CNN_FILTERS[2],kernel_size=3),
-            nn.BatchNorm2d(CNN_FILTERS[2]),
+            
             nn.ReLU(),
+            nn.BatchNorm2d(CNN_FILTERS[2]),
             nn.Dropout2d(CNN_DROP)
             #nn.MaxPool2d(2)
         )
@@ -361,7 +368,7 @@ class Combine(nn.Module):
         #print(input.shape)
         batch_size,seqlen,features,cow,col = input.size()
         input = input.view(batch_size*seqlen,features,cow,col)
-        coutput = self.cnn(input)
+        coutput = self.dsc(input) #/dsc
         r_input = coutput.view(batch_size,seqlen,-1)
         rout1,h1 = self.rnn1(r_input)
        # print(rout1.shape)   #[16,10,16]
@@ -453,7 +460,8 @@ def test(testloader):
         pred_y = testout.data.max(1)[1]
         #print(pred_y.shape)
         acc += (pred_y == y.squeeze()).sum().item()/y.size(0)
-        
+        #print(y.shape)
+        #print(testout.shape)
         test_loss += loss_fun(testout,y.squeeze()).data.item()
         #print(acc,'nnnn',(pred_y == y.squeeze()).sum())
     #print(step)
@@ -477,7 +485,7 @@ def cross():
             trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
             testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
             test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
-            print(crosstest.label.size,len(testloader.dataset))
+            #print(crosstest.label.size,len(testloader.dataset))
             #train_loss[epoch,0],train_loss[epoch,1] = 
             train(epoch,trainloader,test_x,test_y)
             #test_loss[epoch,0],test_loss[epoch,1]= test(testloader)
@@ -528,10 +536,10 @@ def final():
     # testloader = torch.utils.data.DataLoader(dataset=testdata,batch_size=BATCH_SIZE,shuffle=True)
     # test_x,test_y = traindata.aa['data'][8*23*6:9*23*6],traindata.aa['label'][8*6*23:9*23*6]
 
-    crossdata = CrossDataSet(train_path,test_path,10,1,cross=True)
+    crossdata = CrossDataSet(train_path,test_path,5,1,cross=True)
     crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
-    trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
-    testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
+    trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True,drop_last=True)
+    testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True,drop_last=True)
     test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
     for epoch in range(EPOCH):#TODO
             train_loss[epoch,0],train_loss[epoch,1] = train(epoch,trainloader,test_x,test_y)
@@ -546,8 +554,8 @@ def final():
     plt.ylabel('loss')
     plt.legend()
     plt.subplot(2,1,2)
-    plt.plot(np.arange(EPOCH),test_loss[:,1],'b-',label='test_acc')
-    plt.plot(np.arange(EPOCH),train_loss[:,1],'r-',label='train_acc')
+    plt.plot(np.arange(EPOCH),test_loss[:,1],'r-',label='test_acc')
+    plt.plot(np.arange(EPOCH),train_loss[:,1],'b-',label='train_acc')
     plt.xlabel('epoch')
     plt.ylabel('acc')
     plt.legend()
