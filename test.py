@@ -149,9 +149,9 @@ Final test loss:2.7004 acc0.3645
 
 '''
 EXTRA_NAME=''
-train_path = 'eeg_stimuli_train_shuffle_norm99.npy'
-test_path = 'eeg_stimuli_test_shuffle_norm99.npy'
-MESH_SIZE = 9
+train_path = 'eeg_stimuli_train_shuffle_norm.npy'
+test_path = 'eeg_stimuli_test_shuffle_norm.npy'
+MESH_SIZE = 6
 BATCH_SIZE = 64
 LR=0.001
 EPOCH = 2
@@ -488,19 +488,20 @@ def cross():
     k=2
     train_loss = np.zeros(shape=(k,EPOCH))
     train_acc = np.zeros(shape=(k,EPOCH))
-    test_loss = np.zeors(shape=k)
+    test_loss = np.zeros(shape=k)
     test_acc = np.zeros(shape=k)
     for index in range(k):
         init_model()
         #train_loss = np.zeros(shape=(EPOCH,2))
         #test_loss = np.zeros(shape=(EPOCH,2))
         print('======index'+str(index)+'========')
+        crossdata = CrossDataSet(train_path,test_path,k,index,cross=True)
+        crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
+        trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
+        testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
+        test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
         for epoch in range(EPOCH):
-            crossdata = CrossDataSet(train_path,test_path,k,index,cross=True)
-            crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
-            trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
-            testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
-            test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
+            
             #print(crosstest.label.size,len(testloader.dataset))
             #train_loss[epoch,0],train_loss[epoch,1] = 
             train_loss[index,epoch],train_acc[index,epoch] = train(epoch,trainloader,test_x,test_y)
@@ -539,7 +540,7 @@ def cross():
 
     plt.subplot(3,1,2)
     for i in range(k):
-        plt.plot(np.arange(EPOCH),train_acc[k,:],label='train_acc%i'%i)
+        plt.plot(np.arange(EPOCH),train_acc[i,:],label='train_acc%i'%i)
     plt.xlabel('epoch')
     plt.ylabel('acc')
     plt.legend()
@@ -591,5 +592,5 @@ def final():
     
 
 if __name__ == "__main__":
-  #  cross()
-    final()
+    cross()
+  #  final()
