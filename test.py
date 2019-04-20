@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import torch
 import torch.utils.data
 import torch.nn as nn
@@ -136,20 +137,30 @@ Final test loss:2.7004 acc0.3645
     =>更换stimuli
     =>0.3 0.3 0.001 收敛慢 
     =>0 0.3 0.001 cha
-    =>dsc 0.2 0.2 0.0005
+    =>dsc 0.2 0.2 0.001 交换bnrelu  收敛快 过拟合严重
+    =>    0.5(无效) 0.3 .0005 收敛快 过拟合
+    =>dsc + l2 0.5 0.5 0.001  过拟合收敛慢
+====>之前的数据预处理shuffle无效 更正
+    =>dsc + l2 0.3 0.3 0.0005  
+    =>                          99  test acc <>70 loss<>1 效果提升 过拟合
+    =>dsc + l2 0.5 0.3 0.001   同上             75 
+    =>dsc- l2      0.3 0.001   收敛效果更好 效果差
+    =>dsc- l2      0.5 0.003   过拟合 效果差 几乎同上
+
 '''
 EXTRA_NAME=''
-train_path = 'eeg_stimuli_train_shuffle_norm.npy'
-test_path = 'eeg_stimuli_test_shuffle_norm.npy'
+train_path = 'eeg_stimuli_train_shuffle_norm99.npy'
+test_path = 'eeg_stimuli_test_shuffle_norm99.npy'
+MESH_SIZE = 9
 BATCH_SIZE = 64
-LR=0.005
-EPOCH = 100
+LR=0.001
+EPOCH = 2
 CUDA = False
-RNN_DROP = 0.2
-CNN_DROP = 0.2
+RNN_DROP = 0.5
+CNN_DROP = 0.5
 CNN_FILTERS=[64,32,16]
 RNN_FEA = [32,16]
-WD=0.0005
+WD=0.003
 
 def meanandvar(data):
     m = np.mean(data,axis=(0,1,2))
@@ -296,8 +307,8 @@ class DSC(nn.Module):
         super(DSC,self).__init__()
         self.depth_wise = nn.Sequential(
             nn.Conv2d(in_channels=128,out_channels=128,kernel_size=3,groups=128),
-            nn.BatchNorm2d(128),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.BatchNorm2d(128)
         )
         self.point_wise = nn.Sequential(
             nn.Conv2d(in_channels=128,out_channels=64,kernel_size=1),     
@@ -311,11 +322,11 @@ class DSC(nn.Module):
             nn.BatchNorm2d(32),
             nn.Dropout2d(CNN_DROP)
         )
-        self.fc = nn.Linear(64*4*4,32)
+        self.fc = nn.Linear(64*(MESH_SIZE-2)*(MESH_SIZE-2),RNN_FEA[0])
     def forward(self,input):
         x = self.depth_wise(input)
         x = self.point_wise(x)
-       # x = self.l2(x)
+        #x = self.l2(x)
         out = self.fc(x.view(x.size(0),-1))
         return out
 
@@ -346,7 +357,7 @@ class CNN(nn.Module):
             nn.Dropout2d(CNN_DROP)
             #nn.MaxPool2d(2)
         )
-        self.linear = nn.Linear(2*2*CNN_FILTERS[2],32)
+        self.linear = nn.Linear((MESH_SIZE-4)*(MESH_SIZE-4)*CNN_FILTERS[2],RNN_FEA[0])
     def forward(self,x):
         x = self.l0(x)
         x = self.l1(x)
@@ -451,11 +462,12 @@ def test(testloader):
     step = 0
     for step,(x,y) in enumerate(testloader):
        
-        testout = model(x)
-        y = y.long()
+        
         if CUDA is True:
             x = x.cuda()
             y = y.cuda()
+        testout = model(x)
+        y = y.long()
         #print(y.shape)
         pred_y = testout.data.max(1)[1]
         #print(pred_y.shape)
@@ -473,7 +485,11 @@ def test(testloader):
 def cross():
     #start = time.time()
     epoch = 0
-    k=5
+    k=2
+    train_loss = np.zeros(shape=(k,EPOCH))
+    train_acc = np.zeros(shape=(k,EPOCH))
+    test_loss = np.zeors(shape=k)
+    test_acc = np.zeros(shape=k)
     for index in range(k):
         init_model()
         #train_loss = np.zeros(shape=(EPOCH,2))
@@ -487,7 +503,7 @@ def cross():
             test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
             #print(crosstest.label.size,len(testloader.dataset))
             #train_loss[epoch,0],train_loss[epoch,1] = 
-            train(epoch,trainloader,test_x,test_y)
+            train_loss[index,epoch],train_acc[index,epoch] = train(epoch,trainloader,test_x,test_y)
             #test_loss[epoch,0],test_loss[epoch,1]= test(testloader)
         
     #print('time:',end-start)
@@ -495,7 +511,7 @@ def cross():
         torch.save(model.state_dict(),path)
     testloss=0.0
     testacc=0.0
-    for index in range(5):
+    for index in range(k):
         crossdata = CrossDataSet(train_path,test_path,k,index,cross=True)
         crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
         testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
@@ -504,27 +520,37 @@ def cross():
         init_model()
         model.load_state_dict(torch.load(path))
         loss,acc = test(testloader)
+        test_loss[index] = loss
+        test_acc[index] = acc
         testloss += loss
         testacc += acc        
-    testloss /= 5
-    testacc /= 5
+    testloss /= k
+    testacc /= k
     print('Final test loss:%.4f'%testloss,'acc%.4f'%testacc)
     #plt.show()
     # end = time.time()
     # print('time',end-start)
-    #     plt.subplot(2,1,1)
-    #     plt.plot(np.arange(EPOCH),train_loss[:,0],'b-',label='train_loss')
-    #     plt.plot(np.arange(EPOCH),test_loss[:,0],'r-',label='test_loss')
-    #     plt.xlabel('epoch')
-    #     plt.ylabel('loss')
-    #     plt.legend()
-    #     plt.subplot(2,1,2)
-    #     plt.plot(np.arange(EPOCH),test_loss[:,1],'b-',label='test_acc')
-    #     plt.plot(np.arange(EPOCH),train_loss[:,1],'r-',label='train_acc')
-    #     plt.xlabel('epoch')
-    #     plt.ylabel('acc')
-    #     plt.legend()
-    #     plt.savefig('epoch'+str(epoch)+'bs'+str(BATCH_SIZE)+'lr'+str(LR) + EXTRA_NAME+'.png',format='png')
+    plt.subplot(3,1,1)
+    for i in range(k):
+        plt.plot(np.arange(EPOCH),train_loss[i,:],label='train_loss%i'%i)
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
+    plt.legend()
+
+    plt.subplot(3,1,2)
+    for i in range(k):
+        plt.plot(np.arange(EPOCH),train_acc[k,:],label='train_acc%i'%i)
+    plt.xlabel('epoch')
+    plt.ylabel('acc')
+    plt.legend()
+
+    plt.subplot(3,1,3)
+    plt.plot(np.arange(k),test_loss[:],label='test_loss')
+    plt.plot(np.arange(k),test_acc[:],label = 'test_acc')
+    plt.xlabel('index')
+    plt.legend()
+    plt.savefig('crossval'+'bs'+str(BATCH_SIZE)+'lr'+str(LR) + EXTRA_NAME+'.png',format='png')
+
 def final():
     start = time.time()
     init_model()
