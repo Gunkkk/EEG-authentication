@@ -146,21 +146,48 @@ Final test loss:2.7004 acc0.3645
     =>dsc + l2 0.5 0.3 0.001   同上             75 
     =>dsc- l2      0.3 0.001   收敛效果更好 效果差
     =>dsc- l2      0.5 0.003   过拟合 效果差 几乎同上
-
-'''
+    =>dsc- l2      0.3 0.003 rnn 3ceng 无效果
+                                 1ceng acc 70 效果好 **
+                                    =>9*9        
+                                    =>RELU cancel 效果差
+                                    =>1*1 效果差
+                                    =>sgd+momentum
+                                    =>一层dropout的cnn 64-32-16 效果差
+                                    =>stimuli baseline混合 提升一点点
+                                    =>wd=0.0005 稳定收敛  65<>
+                                    =>wd=0.05 收敛慢
+                                    =>wd=0.01 66 效果不错 acc70+ <75 epoch 100未收敛完！！
+                                    =>wd=0.01 66 添加高斯噪声
+                                        =>128*s*s 效果差
+                                        =>s*s 效果差 
+                                    =>picture 01化 变差
+'''         
 EXTRA_NAME=''
 train_path = 'eeg_stimuli_train_shuffle_norm.npy'
 test_path = 'eeg_stimuli_test_shuffle_norm.npy'
 MESH_SIZE = 6
 BATCH_SIZE = 64
 LR=0.001
-EPOCH = 2
+EPOCH = 100
 CUDA = False
-RNN_DROP = 0.5
+RNN_DROP = 0.3
 CNN_DROP = 0.5
 CNN_FILTERS=[64,32,16]
 RNN_FEA = [32,16]
-WD=0.003
+WD=0.01
+NOISE = True
+ONE_ZERO =True
+
+def addGaussianNoise(data):
+    '''
+    add gaussian noise for 2 or 3 axis ?
+    '''
+    # for i in range(data.shape[0]):
+    #     noise = np.random.randn(data.shape[1],data.shape[2])
+    #     data[i] += noise
+    noise = np.random.randn(data.shape[0],data.shape[1],data.shape[2])
+    data += noise
+    return data
 
 def meanandvar(data):
     m = np.mean(data,axis=(0,1,2))
@@ -170,7 +197,7 @@ def meanandvar(data):
 
 def normalization(data):
     m = data.max()
-    n = data.min() 
+    n = data[data.nonzero()].min() 
     data = (data-n)/(m-n)
     return data
 
@@ -218,12 +245,25 @@ class CrossDataSet(torch.utils.data.Dataset):
         self.label = np.concatenate((self.alllabel[:int(self.index*self.slice)],self.alllabel[int((self.index+1)*self.slice):]),axis=0)
         self.testdata = self.alldata[int(self.index*self.slice):int((self.index+1)*self.slice)]
         self.testlabel = self.alllabel[int(self.index*self.slice):int((self.index+1)*self.slice)]
+        #self.noise = NOISE
 
     def __getitem__(self,index):
-        if self.cross is True:
-            return self.data[index],self.label[index]
-        else:
-            return self.alldata[index],self.alllabel[index]
+        data = self.data
+        label = self.label
+
+        if self.cross is False:
+            data = self.alldata
+            label = self.alllabel
+
+        if NOISE is True:
+            for i in range(data.shape[1]):#seq
+                data[index][i] = addGaussianNoise(data[index][i])
+
+        if ONE_ZERO is True:
+            for i in range(data.shape[1]):
+                data[index][i] = normalization(data[index][i]) 
+
+        return data[index],label[index]
 
     def __len__(self):
         if self.cross is True:
@@ -237,7 +277,17 @@ class CrossTest(torch.utils.data.Dataset):
         self.data = data
         self.label = label
     def __getitem__(self,index):
-        return self.data[index],self.label[index]
+        data = self.data 
+        label = self.label
+        if NOISE is True:
+            for i in range(data.shape[1]):#seq
+                data[index][i] = addGaussianNoise(data[index][i])
+
+        if ONE_ZERO is True:
+            for i in range(data.shape[1]):
+                data[index][i] = normalization(data[index][i]) 
+
+        return data[index],label[index]
     def __len__(self):
         return self.label.size
 
@@ -314,6 +364,7 @@ class DSC(nn.Module):
             nn.Conv2d(in_channels=128,out_channels=64,kernel_size=1),     
             nn.ReLU(),
             nn.BatchNorm2d(64),
+            nn.Dropout2d(CNN_DROP)
           #  nn.MaxPool2d(2)
         ) # =>64*4*4
         self.l2 = nn.Sequential(
@@ -338,7 +389,7 @@ class CNN(nn.Module):
             
             nn.ReLU(),
             nn.BatchNorm2d(CNN_FILTERS[0]),
-            nn.Dropout2d(CNN_DROP),
+           # nn.Dropout2d(CNN_DROP),
            # nn.MaxPool2d(2)   
         )
         self.l1 = nn.Sequential(
@@ -346,7 +397,7 @@ class CNN(nn.Module):
             
             nn.ReLU(),
             nn.BatchNorm2d(CNN_FILTERS[1]),
-            nn.Dropout2d(CNN_DROP),
+           # nn.Dropout2d(CNN_DROP),
            # nn.MaxPool2d(2)
         )
         self.l2 = nn.Sequential(
@@ -371,7 +422,7 @@ class Combine(nn.Module):
         super(Combine,self).__init__()
         self.cnn = CNN()
         self.dsc = DSC()
-        self.rnn1 = nn.GRU(RNN_FEA[0],RNN_FEA[1],2,batch_first=True,dropout=RNN_DROP)
+        self.rnn1 = nn.GRU(RNN_FEA[0],RNN_FEA[1],1,batch_first=True,dropout=RNN_DROP)
         #self.rnn2 = nn.GRU(16,8,1)
         self.linear = nn.Linear(10*RNN_FEA[1],23)
 
@@ -418,7 +469,27 @@ model visualization using visualize.py
 
 
 
+def traintest(dataset):
+    '''
+    val shuffle
+    '''
+    size = dataset.label.size
+    permutation = np.random.permutation(size)
+    p = int(size*0.2)
+    data = dataset.data[permutation[:p],:,:,:,:]
+    label = dataset.label[permutation[:p],:]
 
+    if NOISE is True:
+        for index in range(p):
+            for i in range(data.shape[1]):#seq
+                data[index][i] = addGaussianNoise(data[index][i])
+
+    if ONE_ZERO is True:
+        for index in range(p):
+            for i in range(data.shape[1]):
+                data[index][i] = normalization(data[index][i]) 
+
+    return data,label
 
 def train(epoch,trainloader,test_x,test_y):
     model.train()
@@ -436,7 +507,7 @@ def train(epoch,trainloader,test_x,test_y):
         loss = loss_fun(out,y.squeeze())    
         loss.backward()
         optimizer.step()
-        if step%5 ==0:
+        if step%5 == 0:
             #print(test_x.shape)
             tx = torch.DoubleTensor(test_x)
             ty = torch.LongTensor(test_y).squeeze()
@@ -485,7 +556,7 @@ def test(testloader):
 def cross():
     #start = time.time()
     epoch = 0
-    k=2
+    k=5
     train_loss = np.zeros(shape=(k,EPOCH))
     train_acc = np.zeros(shape=(k,EPOCH))
     test_loss = np.zeros(shape=k)
@@ -499,7 +570,7 @@ def cross():
         crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
         trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
         testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True)
-        test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
+        test_x,test_y = traintest(crossdata)
         for epoch in range(EPOCH):
             
             #print(crosstest.label.size,len(testloader.dataset))
@@ -567,7 +638,7 @@ def final():
     crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
     trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True,drop_last=True)
     testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True,drop_last=True)
-    test_x,test_y = crossdata.data[:6*23],crossdata.label[:6*23]
+    test_x,test_y = traintest(crossdata)
     for epoch in range(EPOCH):#TODO
             train_loss[epoch,0],train_loss[epoch,1] = train(epoch,trainloader,test_x,test_y)
             test_loss[epoch,0],test_loss[epoch,1]= test(testloader)
@@ -592,5 +663,5 @@ def final():
     
 
 if __name__ == "__main__":
-    cross()
-  #  final()
+  #  cross()
+     final()
