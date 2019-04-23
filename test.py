@@ -156,15 +156,23 @@ Final test loss:2.7004 acc0.3645
                                     =>stimuli baseline混合 提升一点点
                                     =>wd=0.0005 稳定收敛  65<>
                                     =>wd=0.05 收敛慢
-                                    =>wd=0.01 66 效果不错 acc70+ <75 epoch 100未收敛完！！
+                            pwdp    =>wd=0.01 66 效果不错 acc70+ <75 epoch 100未收敛完！！
                                     =>wd=0.01 66 添加高斯噪声
                                         =>128*s*s 效果差
                                         =>s*s 效果差 
                                     =>picture 01化 变差
+                                    =>01+noise 不收敛
+                                    =>LSTM <gru
+                                    =>GRU 16 8 差
+                                    =>GRU 64 32 差不多
+                       pwdp dwdrop  =>差
+                            maxpool => 70
+                                    =>baseline  <60一般
+
 '''         
 EXTRA_NAME=''
-train_path = 'eeg_stimuli_train_shuffle_norm.npy'
-test_path = 'eeg_stimuli_test_shuffle_norm.npy'
+train_path = 'eeg_stimuli_train_shuffle_norm99.npy'
+test_path = 'eeg_stimuli_test_shuffle_norm99.npy'
 MESH_SIZE = 6
 BATCH_SIZE = 64
 LR=0.001
@@ -175,18 +183,18 @@ CNN_DROP = 0.5
 CNN_FILTERS=[64,32,16]
 RNN_FEA = [32,16]
 WD=0.01
-NOISE = True
-ONE_ZERO =True
+NOISE = False
+ONE_ZERO =False
 
 def addGaussianNoise(data):
     '''
     add gaussian noise for 2 or 3 axis ?
     '''
-    # for i in range(data.shape[0]):
-    #     noise = np.random.randn(data.shape[1],data.shape[2])
-    #     data[i] += noise
-    noise = np.random.randn(data.shape[0],data.shape[1],data.shape[2])
-    data += noise
+    for i in range(data.shape[0]):
+        noise = np.random.randn(data.shape[1],data.shape[2])
+        data[i] += noise
+    # noise = np.random.normal(0,0.1,(data.shape[0],data.shape[1],data.shape[2]))
+    # data += noise
     return data
 
 def meanandvar(data):
@@ -358,14 +366,15 @@ class DSC(nn.Module):
         self.depth_wise = nn.Sequential(
             nn.Conv2d(in_channels=128,out_channels=128,kernel_size=3,groups=128),
             nn.ReLU(),
-            nn.BatchNorm2d(128)
+            nn.BatchNorm2d(128),
+           # nn.Dropout2d(CNN_DROP)
         )
         self.point_wise = nn.Sequential(
             nn.Conv2d(in_channels=128,out_channels=64,kernel_size=1),     
             nn.ReLU(),
             nn.BatchNorm2d(64),
-            nn.Dropout2d(CNN_DROP)
-          #  nn.MaxPool2d(2)
+            nn.Dropout2d(CNN_DROP),
+          # nn.MaxPool2d(2)
         ) # =>64*4*4
         self.l2 = nn.Sequential(
             nn.Conv2d(64,32,3),

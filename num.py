@@ -54,11 +54,11 @@ def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
     eeg['data'][:,:,2,4] = b['data'][:,:,10]
     eeg['data'][:,:,1,3] = b['data'][:,:,11]
     eeg['data'][:,:,1,5] = b['data'][:,:,12]
-    eeg['data'][:,:,1,4] = b['data'][:,:,13]  #为了避免引入多个情感 取最后60秒  65-393
+    eeg['data'][:,:,0,4] = b['data'][:,:,13] #修正 #为了避免引入多个情感 取最后60秒  65-393
 
     print(eeg['data'][0,0,1,5])
     print('=====')
-    print(b['data'][0,128,12])
+    print(b['data'][0,0,12])
     ##验证
     eeg['data'].resize(CLIP_NUM*23*6,10,128,6,6)
     print(eeg['data'][0,0,0,1,5],eeg['data'].shape)
@@ -85,7 +85,9 @@ def eegtodata(a,CLIP_NUM,trainname,testname,shuffle=False):
         permutation = np.random.permutation(eeg['label'].size)
         shufflez_data = eeg['data'][permutation,:,:,:,:]
         shufflez_label = eeg['label'][permutation,:]
-    
+        eeg['data'] = shufflez_data
+        eeg['label'] = shufflez_label
+
     eeg['data'].resize(CLIP_NUM*23,6,10,128,6,6)
     eeg['label'].resize(CLIP_NUM*23,6,1)
     train_data = eeg['data'][:,:5,:,:,:,:].copy()
@@ -195,6 +197,7 @@ def eegtodata2(a,CLIP_NUM,trainname,testname,shuffle=False):
         shufflez_label = eeg['label'][permutation,:]
         eeg['data'] = shufflez_data
         eeg['label'] = shufflez_label
+
     eeg['data'].resize(CLIP_NUM*23,6,10,128,9,9)
     eeg['label'].resize(CLIP_NUM*23,6,1)
     train_data = eeg['data'][:,:5,:,:,:,:].copy()
@@ -236,7 +239,7 @@ if __name__ == "__main__":
     #eegtodata(a,18,'eeg_baseline_train.npy','eeg_baseline_test.npy')
     #eegtodata(a,18,'eeg_baseline_train_shuffle_norm.npy','eeg_baseline_test_shuffle_norm.npy',shuffle=True)
     a = np.load('eeg_stimuli.npy')
-    #eegtodata(a,18,'eeg_stimuli_train_shuffle_norm.npy','eeg_stimuli_test_shuffle_norm.npy',shuffle=True)
-    eegtodata2(a,18,'eeg_stimuli_train_shuffle_norm99.npy','eeg_stimuli_test_shuffle_norm99.npy',shuffle=True)
+    eegtodata(a,18,'eeg_stimuli_train_shuffle_norm.npy','eeg_stimuli_test_shuffle_norm.npy',shuffle=True)
+    #eegtodata2(a,18,'eeg_stimuli_train_shuffle_norm99.npy','eeg_stimuli_test_shuffle_norm99.npy',shuffle=True)
     #train (2070,10,128,6,6) (2070,1)
     #test  (414,10,128,6,6)  (414,1)
