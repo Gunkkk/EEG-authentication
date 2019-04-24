@@ -2,7 +2,25 @@
 import pickle
 import numpy as np
 
+def mesh_normalize(data):
+    #print(data[data.nonzero()].mean(),data[data.nonzero()].std())
+    mean = data[data.nonzero()].mean()
+    std = data[data.nonzero()].std()
+    data[data.nonzero()] = (data[data.nonzero()]-mean)/std
+    print(data[data.nonzero()].mean(),data[data.nonzero()].std())
+    return data
 
+def allStandardScaler(data):
+    '''
+    @input all input (clip*person*6)*10*128*6*6
+    @output mesh normalization respectively
+    '''
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            for k in range(data.shape[2]):
+                data[i,j,k] = mesh_normalize(data[i,j,k])
+    #data[:,:,:] = mesh_normalize(data[:,:,:])
+    return data
 
 def deaptonpy32(data=None,personindex=0):
     ### 取后60s
@@ -115,9 +133,9 @@ def deaptonpy14_66(data=None,personindex=0):
     data_transpose = data_1.transpose(0,2,1) #trial*data*channel
     print(data_transpose.shape)
     data_premesh = data_transpose.copy()
-    data_premesh.resize(40,10,128,40)
+    data_premesh.resize(40*6,10,128,40)
     print(data_premesh.shape)
-    data_fin = np.zeros(shape=(40,10,128,6,6))
+    data_fin = np.zeros(shape=(40*6,10,128,6,6))
     #labels
     label_fin = np.zeros(shape=(data_fin.shape[0],1))
     label_fin[:] = personindex
@@ -155,10 +173,14 @@ def deaptonpy14_66(data=None,personindex=0):
    # data_fin[:,:,:,7,5] = data_premesh[:,:,:,30]
     data_fin[:,:,:,5,3] = data_premesh[:,:,:,31]
     
+    print(data_fin[1,2,3,0,4])
+    print('=========================')
+    print(data_premesh[1,2,3,17])
+
     return data_fin,label_fin
 
 
-def tomesh(filename,mesh_size,channel_num):
+def tomesh(filename,mesh_size,channel_num,shuffle=True):
     
     
     dataset = dict()
@@ -170,7 +192,7 @@ def tomesh(filename,mesh_size,channel_num):
             i = '0'+str(i)
         path = './data_preprocessed_python/s%s.dat'%i
         a = pickle.load(open(path,'rb'),encoding='latin1')
-        print(a.keys())
+       # print(a.keys())
         #print(type(a['data']))
         print(a['data'].shape,a['labels'].shape)  #(40,40,8064)video/trial x channel x data (40,4)
         if channel_num == 32:
@@ -178,7 +200,8 @@ def tomesh(filename,mesh_size,channel_num):
         elif channel_num ==14 and mesh_size == 9:
             idata,ilabel = deaptonpy14_99(a['data'],index)
         elif mesh_size == 6:
-            idata,ilabel = deaptopy14_66(a['data'],index)
+            idata,ilabel = deaptonpy14_66(a['data'],index)
+        else:   return 
         #idata,ilabel = func(a['data'],index)
         if data is None:
             data = idata
@@ -186,13 +209,31 @@ def tomesh(filename,mesh_size,channel_num):
         else:
             data = np.append(data,idata,axis=0)
             label = np.append(label,ilabel,axis=0)
+        print('subject%s'%i,'ok')
+
+    if shuffle is True:
+        permutation = np.random.permutation(label.size)
+        x = permutation[1]
+       # aadata = data[x,1,1,0,4]
+       # aalabel = label[x]
+        shufflez_data = data[permutation,:,:,:,:]
+        shufflez_label = label[permutation,:]
+        data = shufflez_data
+        label = shufflez_label
+    print('shuffle ')
+   # print(data[1,1,1,0,4],aadata)
+    #print(label[1],aalabel)
+    print('============',data.shape)
+    data = allStandardScaler(data)
+   # print(data[1,1,1,:,:])
     dataset['data'] = data
     dataset['label'] = label
+    
     np.array(dataset)
     np.save(filename,dataset)
 
 if __name__ == "__main__":
-    dataset = tomesh('deap_32.npy',9,32)
+    dataset = tomesh('deap_6_14.npy',6,14,shuffle=True) #9/6 32/14
 
 
     

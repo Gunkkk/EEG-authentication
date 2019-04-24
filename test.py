@@ -171,9 +171,10 @@ Final test loss:2.7004 acc0.3645
 
 '''         
 EXTRA_NAME=''
-train_path = 'eeg_stimuli_train_shuffle_norm99.npy'
-test_path = 'eeg_stimuli_test_shuffle_norm99.npy'
+train_path = 'deap_6_14.npy'#'eeg_stimuli_train_shuffle_norm99.npy'
+test_path = None#'eeg_stimuli_test_shuffle_norm99.npy'
 MESH_SIZE = 6
+TYPE_NUM = 32
 BATCH_SIZE = 64
 LR=0.001
 EPOCH = 100
@@ -242,9 +243,15 @@ class CrossDataSet(torch.utils.data.Dataset):
     def __init__(self,path1,path2,k,index,cross=True):
         super(CrossDataSet,self).__init__()
         self.alltrain = np.load(path1,encoding='latin1').item()
-        self.alltest = np.load(path2,encoding='latin1').item()
-        self.alldata = np.concatenate((self.alltrain['data'],self.alltest['data']),axis=0)
-        self.alllabel = np.concatenate((self.alltrain['label'],self.alltest['label']),axis=0)
+        if path2 is not None:
+
+            self.alltest = np.load(path2,encoding='latin1').item()
+
+            self.alldata = np.concatenate((self.alltrain['data'],self.alltest['data']),axis=0)
+            self.alllabel = np.concatenate((self.alltrain['label'],self.alltest['label']),axis=0)
+        else:
+            self.alldata = self.alltrain['data']
+            self.alllabel = self.alltrain['label']
         self.k = k
         self.index = index
         self.cross = cross
@@ -254,7 +261,8 @@ class CrossDataSet(torch.utils.data.Dataset):
         self.testdata = self.alldata[int(self.index*self.slice):int((self.index+1)*self.slice)]
         self.testlabel = self.alllabel[int(self.index*self.slice):int((self.index+1)*self.slice)]
         #self.noise = NOISE
-
+        print(self.alldata.shape,self.alllabel.shape)
+        print(self.testdata.shape,self.testlabel.shape)
     def __getitem__(self,index):
         data = self.data
         label = self.label
@@ -433,7 +441,7 @@ class Combine(nn.Module):
         self.dsc = DSC()
         self.rnn1 = nn.GRU(RNN_FEA[0],RNN_FEA[1],1,batch_first=True,dropout=RNN_DROP)
         #self.rnn2 = nn.GRU(16,8,1)
-        self.linear = nn.Linear(10*RNN_FEA[1],23)
+        self.linear = nn.Linear(10*RNN_FEA[1],TYPE_NUM)
 
     def forward(self,input):
         #print(input.shape)
