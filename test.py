@@ -168,34 +168,37 @@ Final test loss:2.7004 acc0.3645
                        pwdp dwdrop  =>差
                             maxpool => 70
                                     =>baseline  <60一般
-
+    =>之前的dreamer标准化无效重新标准化
+    =>
 '''         
 EXTRA_NAME=''
-train_path = 'deap_6_14.npy'#'eeg_stimuli_train_shuffle_norm99.npy'
+train_path = 'eeg_stimuli_processed_fir.npy'#clip_peron_channel.npy'#'deap_6_14.npy'
 test_path = None#'eeg_stimuli_test_shuffle_norm99.npy'
 MESH_SIZE = 6
-TYPE_NUM = 32
+TYPE_NUM = 55
 BATCH_SIZE = 64
 LR=0.001
-EPOCH = 100
+EPOCH = 10
 CUDA = False
 RNN_DROP = 0.3
 CNN_DROP = 0.5
 CNN_FILTERS=[64,32,16]
+DSC_FILTERS=[128,64]
 RNN_FEA = [32,16]
 WD=0.01
 NOISE = False
 ONE_ZERO =False
+SEQ=10
 
 def addGaussianNoise(data):
     '''
     add gaussian noise for 2 or 3 axis ?
     '''
-    for i in range(data.shape[0]):
-        noise = np.random.randn(data.shape[1],data.shape[2])
-        data[i] += noise
-    # noise = np.random.normal(0,0.1,(data.shape[0],data.shape[1],data.shape[2]))
-    # data += noise
+    # for i in range(data.shape[0]):
+    #     noise = np.random.normal(0,0.1,(data.shape[1],data.shape[2]))
+    #     data[i] += noise
+    noise = np.random.normal(0,0.1,(data.shape[0],data.shape[1],data.shape[2]))
+    data += noise
     return data
 
 def meanandvar(data):
@@ -261,8 +264,8 @@ class CrossDataSet(torch.utils.data.Dataset):
         self.testdata = self.alldata[int(self.index*self.slice):int((self.index+1)*self.slice)]
         self.testlabel = self.alllabel[int(self.index*self.slice):int((self.index+1)*self.slice)]
         #self.noise = NOISE
-        print(self.alldata.shape,self.alllabel.shape)
-        print(self.testdata.shape,self.testlabel.shape)
+        print(self.data.shape,self.label.shape)
+        #print(self.testdata.shape,self.testlabel.shape)
     def __getitem__(self,index):
         data = self.data
         label = self.label
@@ -307,8 +310,11 @@ class CrossTest(torch.utils.data.Dataset):
     def __len__(self):
         return self.label.size
 
+'''
+quit
+'''
 class DataSet(torch.utils.data.Dataset):
-    def __init__(self,path,transform=None,shuffle=False):
+    def __init__(self,path,transform=None,shuffle=False,test=False):
         super(DataSet,self).__init__()
         self.aa = np.load(path,encoding='latin1').item()
        # print(self.aa['data'])
@@ -322,7 +328,18 @@ class DataSet(torch.utils.data.Dataset):
             shufflez_label = self.aa['label'][permutation,:]
             self.aa['data'] = shufflez_data
             self.aa['label'] = shufflez_label
-
+        half = int(self.aa['label'].size /2)
+        test = int(self.aa['label'].size /5)
+        self.testdata = self.aa['data'][-test:]
+        self.testlabel = self.aa['label'][-test:]
+        self.data = self.aa['data'][:half]
+        self.label = self.aa['label'][:half]
+        if test is True:
+            self.aa['data'] = self.testdata
+            self.aa['label'] = self.testlabel
+        else:
+            self.aa['data'] = self.data
+            self.aa['label'] = self.label
         #self.meshnor = allStandardScaler(self.aa['data'])
         #self.normaa = normalization(self.aa['data'][:])
         #self.m,self.s = meanandvar(self.normaa)
@@ -353,7 +370,7 @@ class DataSet(torch.utils.data.Dataset):
 
     def __len__(self):
         #print(self.aa['label'].size)
-        return int(self.aa['label'].size*2/3)
+        return self.aa['label'].size
     
 #traindata = DataSet(train_path)
 #testdata = DataSet(test_path)
@@ -372,15 +389,15 @@ class DSC(nn.Module):
     def __init__(self):
         super(DSC,self).__init__()
         self.depth_wise = nn.Sequential(
-            nn.Conv2d(in_channels=128,out_channels=128,kernel_size=3,groups=128),
+            nn.Conv2d(in_channels=DSC_FILTERS[0],out_channels=DSC_FILTERS[0],kernel_size=3,groups=DSC_FILTERS[0]),
             nn.ReLU(),
-            nn.BatchNorm2d(128),
-           # nn.Dropout2d(CNN_DROP)
+            nn.BatchNorm2d(DSC_FILTERS[0]),
+            nn.Dropout2d(CNN_DROP)
         )
         self.point_wise = nn.Sequential(
-            nn.Conv2d(in_channels=128,out_channels=64,kernel_size=1),     
+            nn.Conv2d(in_channels=DSC_FILTERS[0],out_channels=DSC_FILTERS[1],kernel_size=1),     
             nn.ReLU(),
-            nn.BatchNorm2d(64),
+            nn.BatchNorm2d(DSC_FILTERS[1]),
             nn.Dropout2d(CNN_DROP),
           # nn.MaxPool2d(2)
         ) # =>64*4*4
@@ -390,12 +407,13 @@ class DSC(nn.Module):
             nn.BatchNorm2d(32),
             nn.Dropout2d(CNN_DROP)
         )
-        self.fc = nn.Linear(64*(MESH_SIZE-2)*(MESH_SIZE-2),RNN_FEA[0])
+        self.fc = nn.Linear(DSC_FILTERS[1]*(MESH_SIZE-2)*(MESH_SIZE-2),RNN_FEA[0])
     def forward(self,input):
         x = self.depth_wise(input)
         x = self.point_wise(x)
         #x = self.l2(x)
         out = self.fc(x.view(x.size(0),-1))
+       # print(out.size())
         return out
 
 class CNN(nn.Module):
@@ -406,7 +424,7 @@ class CNN(nn.Module):
             
             nn.ReLU(),
             nn.BatchNorm2d(CNN_FILTERS[0]),
-           # nn.Dropout2d(CNN_DROP),
+            nn.Dropout2d(CNN_DROP),
            # nn.MaxPool2d(2)   
         )
         self.l1 = nn.Sequential(
@@ -414,7 +432,7 @@ class CNN(nn.Module):
             
             nn.ReLU(),
             nn.BatchNorm2d(CNN_FILTERS[1]),
-           # nn.Dropout2d(CNN_DROP),
+            nn.Dropout2d(CNN_DROP),
            # nn.MaxPool2d(2)
         )
         self.l2 = nn.Sequential(
@@ -425,11 +443,11 @@ class CNN(nn.Module):
             nn.Dropout2d(CNN_DROP)
             #nn.MaxPool2d(2)
         )
-        self.linear = nn.Linear((MESH_SIZE-4)*(MESH_SIZE-4)*CNN_FILTERS[2],RNN_FEA[0])
+        self.linear = nn.Linear((MESH_SIZE-2)*(MESH_SIZE-2)*CNN_FILTERS[1],RNN_FEA[0])
     def forward(self,x):
         x = self.l0(x)
         x = self.l1(x)
-        x = self.l2(x)
+       # x = self.l2(x)
       #  print(x.shape)
         output = self.linear(x.view(x.size(0),-1))
         return output
@@ -439,9 +457,9 @@ class Combine(nn.Module):
         super(Combine,self).__init__()
         self.cnn = CNN()
         self.dsc = DSC()
-        self.rnn1 = nn.GRU(RNN_FEA[0],RNN_FEA[1],1,batch_first=True,dropout=RNN_DROP)
+        self.rnn1 = nn.GRU(RNN_FEA[0],int(RNN_FEA[1]/2),1,batch_first=True,dropout=RNN_DROP,bidirectional=True)
         #self.rnn2 = nn.GRU(16,8,1)
-        self.linear = nn.Linear(10*RNN_FEA[1],TYPE_NUM)
+        self.linear = nn.Linear(SEQ*RNN_FEA[1],TYPE_NUM)
 
     def forward(self,input):
         #print(input.shape)
@@ -449,11 +467,13 @@ class Combine(nn.Module):
         input = input.view(batch_size*seqlen,features,cow,col)
         coutput = self.dsc(input) #/dsc
         r_input = coutput.view(batch_size,seqlen,-1)
+       # print(r_input.size())
         rout1,h1 = self.rnn1(r_input)
        # print(rout1.shape)   #[16,10,16]
        # out = self.rnn2(rout1,h1)
         
         out = self.linear(rout1.reshape(rout1.size(0),-1))  # contigious
+       # print(out.size())
         out = nn.functional.log_softmax(out,dim=1)
         return out
 
@@ -492,7 +512,7 @@ def traintest(dataset):
     '''
     size = dataset.label.size
     permutation = np.random.permutation(size)
-    p = int(size*0.2)
+    p = int(size*0.05)
     data = dataset.data[permutation[:p],:,:,:,:]
     label = dataset.label[permutation[:p],:]
 
@@ -520,24 +540,34 @@ def train(epoch,trainloader,test_x,test_y):
             x = x.cuda()
         #print(x.shape)
         out = model(x)
-        #print(out)
+        #print(out.size())
+        #print('=========')
+        #print(y.squeeze().size())
         loss = loss_fun(out,y.squeeze())    
         loss.backward()
         optimizer.step()
         if step%5 == 0:
             #print(test_x.shape)
-            tx = torch.DoubleTensor(test_x)
-            ty = torch.LongTensor(test_y).squeeze()
+            tx = torch.from_numpy(test_x)#.astype('float64')
+           # print(type(tx),tx.shape)
+            ty = torch.from_numpy(test_y).long().squeeze()
             if CUDA is True:
                 tx = tx.cuda()
                 ty = ty.cuda()
             testout = model(tx)
+            #print(testout)
+            #print(ty.shape)
             pred_y = testout.data.max(1)[1]
+            #print(pred_y)
             #print(test_y.size(0))
             #print(testout.data.max(1)[1])
             #print(pred_y.shape)
             #print(test_y.shape)
-            #print((pred_y == test_y).sum())
+            # print('=======')
+            # print((pred_y == ty).sum())
+            # print(pred_y)
+            # print(ty)
+            # print(ty.size(0))
             accuracy = (pred_y == ty).sum().item()/ty.size(0)
             print('Epoch: ', epoch, '| train loss: %.4f' % loss.data.item(),'train acc:%.4f'%accuracy)
         
@@ -651,17 +681,20 @@ def final():
     # testloader = torch.utils.data.DataLoader(dataset=testdata,batch_size=BATCH_SIZE,shuffle=True)
     # test_x,test_y = traindata.aa['data'][8*23*6:9*23*6],traindata.aa['label'][8*6*23:9*23*6]
 
-    crossdata = CrossDataSet(train_path,test_path,5,1,cross=True)
+    crossdata = CrossDataSet(train_path,test_path,10,1,cross=True)
     crosstest = CrossTest(crossdata.testdata,crossdata.testlabel)
     trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True,drop_last=True)
     testloader = torch.utils.data.DataLoader(dataset=crosstest,batch_size=BATCH_SIZE,shuffle=True,drop_last=True)
+    #crossdata = DataSet(train_path)
+    #trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
+
     test_x,test_y = traintest(crossdata)
     for epoch in range(EPOCH):#TODO
             train_loss[epoch,0],train_loss[epoch,1] = train(epoch,trainloader,test_x,test_y)
             test_loss[epoch,0],test_loss[epoch,1]= test(testloader)
     
     #print('time:',end-start)
-
+    torch.save(model.state_dict(),'testmodel.pkl')
     plt.subplot(2,1,1)
     plt.plot(np.arange(EPOCH),train_loss[:,0],'b-',label='train_loss')
     plt.plot(np.arange(EPOCH),test_loss[:,0],'r-',label='test_loss')
@@ -678,7 +711,50 @@ def final():
     plt.savefig('epoch'+str(epoch)+'bs'+str(BATCH_SIZE)+'lr'+str(LR)+'time'+str(end-start)+EXTRA_NAME+'.png',format='png')
     plt.show()
     
-
+def valwithmodel():
+    init_model()
+    # crossdata = DataSet(train_path,shuffle=True)
+    # testdata = DataSet(train_path,shuffle=True,test=True)
+    # trainloader = torch.utils.data.DataLoader(dataset=crossdata,batch_size=BATCH_SIZE,shuffle=True)
+    # testloader = torch.utils.data.DataLoader(dataset=testdata,batch_size=BATCH_SIZE,shuffle=True)
+    # test_x,test_y = traintest(crossdata)
+    # for epoch in range(EPOCH):#TODO
+    #        train(epoch,trainloader,test_x,test_y)
+    #        test(testloader)
+    
+    # #print('time:',end-start)
+    # torch.save(model.state_dict(),'0model.pkl')
+    # return 0
+    model.load_state_dict(torch.load('0model.pkl',map_location='cpu'))
+    data = DataSet(train_path)
+    trainloader = torch.utils.data.DataLoader(dataset=data,batch_size=BATCH_SIZE,shuffle=True)
+    test_loss =0.0
+    acc = 0.0
+    step = 0
+    print(len(trainloader.dataset))
+    for step,(x,y) in enumerate(trainloader):        
+        if CUDA is True:
+            x = x.cuda()
+            y = y.cuda()
+        testout = model(x)
+        y = y.long()
+        #print(y.shape)
+        pred_y = testout.data.max(1)[1]
+        print(pred_y)
+        acc = (pred_y == y.squeeze()).sum().item()/y.size(0)
+        print('=========')
+        print(y.squeeze())
+        #print(testout.shape)
+        test_loss = loss_fun(testout,y.squeeze()).data.item()
+        print(acc,'nnnn',(pred_y == y.squeeze()).sum())
+        print('Test set average loss %.4f:'%test_loss,'accuracy %.4f'%acc)
+    #print(step)
+   # test_loss /= step+1 #len(testloader.dataset)
+    #acc /= step+1
+    
+    #return test_loss,acc
 if __name__ == "__main__":
   #  cross()
-     final()
+    #final()
+   
+    valwithmodel()
