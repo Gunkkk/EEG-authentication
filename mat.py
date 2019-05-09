@@ -1,10 +1,11 @@
 import scipy.io as sci
 import numpy as np
 import matplotlib.pyplot as plt
-path = '/home/gunkkk/下载//DREAMER.mat'
+path = '/home/gunkkk/下载//EID-M.mat'
 mat = sci.loadmat(path)
 print(mat.keys())
-a = mat['DREAMER']
+a = mat['eeg_close_ubicomp_8sub']
+print(a[20999])
 
 
 def person(p_i):
@@ -33,7 +34,17 @@ print('========')
 
 # plt.show()
 
-
+def eid():
+    data = dict()
+    i=0
+    data['data'] = a[i*7000:i*7000+6400,:14]
+    data['label'] = a[i*7000:i*7000+6400,14]
+    for i in range(1,24):
+        data['data'] = np.append(a[i*7000:i*7000+6400,:14],data['data'],axis=0)
+        data['label'] = np.append(a[i*7000:i*7000+6400,14],data['label'],axis=0)
+    print(data['data'].shape,data['label'].shape)
+    np.array(data)
+    np.save('eid.npy',data)
 
 def baseline():
     baseline_clip = list()
@@ -83,6 +94,7 @@ def stimuli():
     np.save('eeg_stimuli.npy',stimuli_clip) # 23*25472*14
 
 if __name__ == "__main__":
-        print(stimuli_person_clip(0,0).shape) # 25472*14
-        print(baseline_person_clip(0,0).shape)
-        #stimuli()
+       # print(stimuli_person_clip(0,0).shape) # 25472*14
+       # print(baseline_person_clip(0,0).shape)
+       # stimuli()
+       eid()

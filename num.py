@@ -39,7 +39,60 @@ def allStandardScaler(data):
     #data[:,:,:] = mesh_normalize(data[:,:,:])
     return data
     
-def eegtodata(a,CLIP_NUM,trainname,shuffle=False):
+
+def eid(a,filename,shuffle=True):
+    eeg = dict()
+    
+    #label = np.zeros(shape=(8,1))
+    #for i in range(24):
+     #   label[i] = i
+   # eeg['label'] = label
+    a['data'].resize(24,6400,14)
+    eeg['data'] = np.zeros(shape=(24,6400,6,6))
+    eeg['data'][:,:,0,1] = a['data'][:,:,0]
+    eeg['data'][:,:,1,0] = a['data'][:,:,1]
+    eeg['data'][:,:,1,2] = a['data'][:,:,2]
+    eeg['data'][:,:,2,1] = a['data'][:,:,3]
+    eeg['data'][:,:,3,0] = a['data'][:,:,4]
+    eeg['data'][:,:,4,1] = a['data'][:,:,5]
+    eeg['data'][:,:,5,2] = a['data'][:,:,6]
+    eeg['data'][:,:,5,3] = a['data'][:,:,7]
+    eeg['data'][:,:,4,4] = a['data'][:,:,8]
+    eeg['data'][:,:,3,5] = a['data'][:,:,9]
+    eeg['data'][:,:,2,4] = a['data'][:,:,10]
+    eeg['data'][:,:,1,3] = a['data'][:,:,11]
+    eeg['data'][:,:,1,5] = a['data'][:,:,12]
+    eeg['data'][:,:,0,4] = a['data'][:,:,13]
+
+    print(eeg['data'][0,0,1,5])
+    print('=====')
+    print(a['data'][0,0,12])
+    eeg['data'].resize(24*5,10,128,6,6)
+    print(eeg['data'].shape)
+
+    eeg_label = np.zeros(shape=(8,15))
+    for i in range(8):
+        eeg_label[i][:] = i+23
+
+    eeg_label.resize(8*15,1)
+    print(eeg_label.shape)
+    #print(eeg_label)
+    eeg['label'] = eeg_label
+
+    if shuffle is True:
+        permutation = np.random.permutation(eeg['label'].size)
+        shufflez_data = eeg['data'][permutation,:,:,:,:]
+        shufflez_label = eeg['label'][permutation,:]
+        eeg['data'] = shufflez_data
+        eeg['label'] = shufflez_label
+    train_data = allStandardScaler(eeg['data'])
+    train = dict()
+    train['data'] = train_data
+    train['label'] = eeg['label']
+    np.array(train)
+    np.save(filename,train)    
+
+def eegtodata(a,CLIP_NUM,trainname,shuffle=False,norm=True):
     
     b = dict()
 
@@ -131,7 +184,10 @@ def eegtodata(a,CLIP_NUM,trainname,shuffle=False):
     #eeg['data'] = back0(eeg['data'])#togStandardScaler(eeg['data'])
     #print('togstan over!')
 
-    train_data = allStandardScaler(eeg['data'])
+    if norm is True:
+        train_data = allStandardScaler(eeg['data'])
+    else:
+        train_data = eeg['data']
     print('train_norm')
     # allStandardScaler(test_data)
     # print('test_norm')
@@ -372,14 +428,10 @@ def eegtodataseqhznum(a,CLIP_NUM,trainname,len=10,hz=128,shuffle=False):
     num = int(7680/(len*hz))
     b = dict()
 
-    for i in range(CLIP_NUM):
-        a[i]['data'] = a[i]['data'][:,-7680:,:]
-        a[i]['data'] = clip_person_channelnorm(a[i]['data'])
-
-    data = a[0]['data'][:,-7680:,:]
+    data = a[0]['data'][:,:,:]
     label = a[0]['label']
     for i in range(1,CLIP_NUM): #12345
-        data = np.append(data,a[i]['data'][:,-7680:,:],axis=0)
+        data = np.append(data,a[i]['data'][:,:,:],axis=0)
         label = np.append(label,a[i]['label'],axis=0)
     b['data'] = data
     b['label'] = label
@@ -479,8 +531,12 @@ if __name__ == "__main__":
     #a = np.load('eeg_baseline.npy')
     #eegtodata(a,18,'eeg_baseline_train.npy','eeg_baseline_test.npy')
     #eegtodata(a,18,'eeg_baseline_train_shuffle_norm.npy','eeg_baseline_test_shuffle_norm.npy',shuffle=True)
-    a = np.load('eeg_processed_fir.npy',encoding='latin1')
+    a = np.load('eid_processed.npy',encoding='latin1').item()
+    eid(a,'eid_processed_norm_combine.npy',shuffle=True)
   #  eegtodata(a,18,'eeg_stimuli_shuffle_norm_clip_peron_channel.npy',shuffle=True)
-    eegtodata(a,18,'eeg_stimuli_processed_fir.npy',shuffle=True)
+    #eegtodata(a,18,'eeg_stimuli_processed_fir_delta.npy',shuffle=True)
+  #  eegtodataseqhznum(a,18,'eeg_stimuli_processed_fir_2_len5_hz128.npy',len=5,hz=128,shuffle=True)
+   # eegtodataseqhznum(a,18,'eeg_stimuli_processed_fir_2_len20_hz64.npy',len=20,hz=64,shuffle=True)
+   # eegtodata(a,18,'eeg_stimuli_processed_fir_2_nonorm.npy',shuffle=True,norm=False)
     #train (2070,10,128,6,6) (2070,1)
     #test  (414,10,128,6,6)  (414,1)
